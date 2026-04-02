@@ -219,13 +219,121 @@ train_model <- function(model) {
 # FEEDFORWARD NEURAL NETWORK (FF)
 # ============================================================
 
-# Model 1: Single dense layer
-# Model 2: Two dense layers
-# Variants: with and without dropout
+#1.FF model parameters selected
+ff_units <- 64 #number of neurons in each hidden dense layer - captures meaningful patterns without making model very large
+dropout_rate <- 0.3 # 30% of neurons silenced randomly during training
 
-# (Yaline’s code goes here)
+#2. build model function
+build_ff_model <- function(two_layers = FALSE, use_dropout = FALSE) {
+  
+  model <- keras_model_sequential() %>%
+    
+#EMBEDDING LAYER = converts each integer word ID into a dense vector of numbers
+#input_dim = vocabulary size, output_dim = vector size per word
+#embedding_dim = 50 is appropriate for FF because it balances expressiveness and input size 
+#after flattening, this produces 50 x 50 = 2500 inputs to the dense layer = large enough to capture word-level patterns
+#without making the dense layer very large
+#output shape: (batch, maxlen, embedding_dim) = (batch, 50, 50)
+    layer_embedding(
+      input_dim    = max_words,
+      output_dim   = embedding_dim,
+      input_length = maxlen
+    ) %>%
+    
+#FLATTEN LAYER = unrolls the 2D embedding grid (50 words x 50 numbers) into
+#one flat vector of 2500 numbers — required before dense layers
+#output shape: (batch, 2500)
+    layer_flatten()
+  
+  if (!two_layers) {   #case: single hidden dense layer
+    
+    if (!use_dropout) {
+      model <- model %>%
+        # single dense layer w/ no regularization
+        # relu activation: output = max(0, input) for introducing non linearity
+        layer_dense(units = ff_units, activation = "relu")
+    } else {
+      model <- model %>%
+        layer_dense(units = ff_units, activation = "relu") %>%
+        layer_dropout(rate = dropout_rate) #add dropout 
+    }
+    
+  } else {   # case: two hidden dense layers
+    
+    if (!use_dropout) {
+      model <- model %>%
+        layer_dense(units = ff_units, activation = "relu") %>%
+        # second dense layer learns combinations of the first layer's patterns
+        layer_dense(units = ff_units, activation = "relu")
+    } else {
+      model <- model %>%
+        layer_dense(units = ff_units, activation = "relu") %>%
+        layer_dropout(rate = dropout_rate) %>% #adding dropout 
+        layer_dense(units = ff_units, activation = "relu") %>%
+        layer_dropout(rate = dropout_rate)
+    }
+  }
+  
+  model <- model %>%
+    #OUTPUT LAYER: 5 units, one per sentiment class
+    #softmax converts raw scores into probabilities that sum to 1
+    #predicted class = whichever of the 5 has the highest probability
+    layer_dense(units = num_classes, activation = "softmax")
+  
+  return(model)
+}
+
+#3.train the FF models 
+# 3.1 single dense layer w/ no dropout = simplest baseline
+ff_1layer <- build_ff_model(two_layers = FALSE, use_dropout = FALSE)
+compile_model(ff_1layer)                    #adam optimizer, categorical crossentropy loss
+history_ff_1layer <- train_model(ff_1layer) #5 epochs, batch 32, 20% validation split
+
+# 3.2 single dense layer w/ dropout 
+ff_1layer_dropout <- build_ff_model(two_layers = FALSE, use_dropout = TRUE)
+compile_model(ff_1layer_dropout)
+history_ff_1layer_dropout <- train_model(ff_1layer_dropout)
+
+# 3.3 two dense layers w/ no dropout
+ff_2layer <- build_ff_model(two_layers = TRUE, use_dropout = FALSE)
+compile_model(ff_2layer)
+history_ff_2layer <- train_model(ff_2layer)
+
+# 3.4 two dense layers w/ dropout 
+ff_2layer_dropout <- build_ff_model(two_layers = TRUE, use_dropout = TRUE)
+compile_model(ff_2layer_dropout)
+history_ff_2layer_dropout <- train_model(ff_2layer_dropout)
+
+#4. evaluate FF models - run each trained model on the held-out test data (no weight updates here)
+eval_ff_1layer <- evaluate(ff_1layer, x_test, y_test, verbose = 0)
+eval_ff_1layer_dropout <- evaluate(ff_1layer_dropout, x_test, y_test, verbose = 0)
+eval_ff_2layer <- evaluate(ff_2layer,x_test, y_test, verbose = 0)
+eval_ff_2layer_dropout <- evaluate(ff_2layer_dropout, x_test, y_test, verbose = 0)
 
 
+#5. summarize test results
+ff_results <- data.frame(
+  Model = c(
+    "FF_1Layer",
+    "FF_1Layer_Dropout",
+    "FF_2Layer",
+    "FF_2Layer_Dropout"
+  ),
+  Test_Loss = c(
+    as.numeric(eval_ff_1layer["loss"]),
+    as.numeric(eval_ff_1layer_dropout["loss"]),
+    as.numeric(eval_ff_2layer["loss"]),
+    as.numeric(eval_ff_2layer_dropout["loss"])
+  ),
+  Test_Accuracy = c(
+    as.numeric(eval_ff_1layer["accuracy"]),
+    as.numeric(eval_ff_1layer_dropout["accuracy"]),
+    as.numeric(eval_ff_2layer["accuracy"]),
+    as.numeric(eval_ff_2layer_dropout["accuracy"])
+  )
+)
+
+print(ff_results)   
 
 # ============================================================
 # RECURRENT NEURAL NETWORK (RNN)
