@@ -19,6 +19,8 @@ tf$random$set_seed(123)
 # Load packages
 library(keras3)
 library(stringr)
+library(tidyr)
+library(ggplot2)
 
 # Set working directory (update to your working directory)
 setwd("~/Desktop/team_project/")
@@ -331,6 +333,45 @@ history_lstm_2layer <- train_model(lstm_2layer)
 lstm_2layer_dropout <- build_lstm_model(two_layers = TRUE, use_dropout = TRUE)  # deeper + regularized
 compile_model(lstm_2layer_dropout)
 history_lstm_2layer_dropout <- train_model(lstm_2layer_dropout)
+
+# 3.5 Plot Training Performance (Validation Accuracy)
+# Combine validation accuracy across all LSTM model variants into one data frame
+df_plot <- data.frame(
+  epoch = 1:epochs,   # x-axis: training epochs
+  
+  LSTM_1Layer = history_lstm_1layer$metrics$val_accuracy,                 # baseline model
+  LSTM_1Layer_Dropout = history_lstm_1layer_dropout$metrics$val_accuracy, # single layer + dropout
+  LSTM_2Layer = history_lstm_2layer$metrics$val_accuracy,                 # deeper model (2 layers)
+  LSTM_2Layer_Dropout = history_lstm_2layer_dropout$metrics$val_accuracy  # deeper + dropout
+)
+# Reshape data from wide → long format for ggplot compatibility
+df_long <- pivot_longer(
+  df_plot,
+  -epoch,                              # keep epoch as identifier
+  names_to = "Model",                  # model names become a column
+  values_to = "Validation_Accuracy"    # corresponding values stored here
+)
+# Plot validation accuracy across epochs for all models
+ggplot(df_long, aes(
+  x = epoch,                           # x-axis = training epochs
+  y = Validation_Accuracy,             # y-axis = validation accuracy
+  color = Model,                       # different color per model
+  linetype = Model                     # different line style for clarity
+)) +
+  geom_line(size = 1) +                # draw lines for each model
+  # Manually assign colors for consistency and readability
+  scale_color_manual(values = c(
+    "LSTM_1Layer" = "purple",           # baseline model
+    "LSTM_1Layer_Dropout" = "blue",    # dropout version (highlighted)
+    "LSTM_2Layer" = "red",             # deeper model
+    "LSTM_2Layer_Dropout" = "green" # deeper + dropout
+  )) +
+  labs(
+    title = "Validation Accuracy Across Epochs for LSTM Models",  # figure title
+    x = "Epoch",                                                  # x-axis label
+    y = "Validation Accuracy"                                     # y-axis label
+  ) +
+  theme_minimal()   # clean, publication-style theme
 
 
 # 4. Evaluate LSTM Models
