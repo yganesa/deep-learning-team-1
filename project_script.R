@@ -22,8 +22,8 @@ library(stringr)
 library(tidyr)
 library(ggplot2)
 
-# Set working directory (update to your working directory)
-setwd("~/Desktop/team_project/")
+# Set working directory to current folder opened (if needed, update to your working directory)
+setwd(".")
 
 
 # ============================================================
