@@ -11,16 +11,16 @@
 # Clear environment 
 rm(list = ls(all.names = TRUE))
 
-# Set random seed (ensures consistent results)
-set.seed(123)
-library(tensorflow)
-tf$random$set_seed(123)
-
 # Load packages
 library(keras3)
 library(stringr)
 library(tidyr)
 library(ggplot2)
+
+# Set random seed (ensures consistent results)
+set.seed(123)
+library(tensorflow)
+tf$random$set_seed(123)
 
 # Set working directory to current folder opened (if needed, update to your working directory)
 setwd(".")
