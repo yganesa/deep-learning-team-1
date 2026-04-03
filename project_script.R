@@ -310,75 +310,53 @@ eval_ff_1layer_dropout <- evaluate(ff_1layer_dropout, x_test, y_test, verbose = 
 eval_ff_2layer <- evaluate(ff_2layer,x_test, y_test, verbose = 0)
 eval_ff_2layer_dropout <- evaluate(ff_2layer_dropout, x_test, y_test, verbose = 0)
 
-#plot all FF model validation histories on two combined graphs
+#plot training and validation accuracy+loss across epochs 
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1), oma = c(0, 0, 0, 15))
 
-par(mfrow = c(1, 2), mar = c(5, 4, 4, 2) + 0.1)
+colors <- c("blue", "red", "green", "purple")
 
-colors  <- c("blue", "red", "green", "purple")  
-ltypes  <- c(1, 2, 1, 2) #solid for no dropout, dashed for dropout
-lwidths <- rep(2, 4)
-
-models_val_acc  <- list(
-  history_ff_1layer$metrics$val_accuracy,
-  history_ff_1layer_dropout$metrics$val_accuracy,
-  history_ff_2layer$metrics$val_accuracy,
-  history_ff_2layer_dropout$metrics$val_accuracy
+histories <- list(
+  history_ff_1layer,
+  history_ff_1layer_dropout,
+  history_ff_2layer,
+  history_ff_2layer_dropout
 )
 
-models_val_loss <- list(
-  history_ff_1layer$metrics$val_loss,
-  history_ff_1layer_dropout$metrics$val_loss,
-  history_ff_2layer$metrics$val_loss,
-  history_ff_2layer_dropout$metrics$val_loss
-)
-
-labels <- c("1 Layer", "1 Layer + Dropout", "2 Layers", "2 Layers + Dropout")
-
-# --- Validation Accuracy ---
-plot(NULL,
-     xlim = c(1, 5), ylim = c(0.40, 0.70),
-     xlab = "Epoch", ylab = "Validation Accuracy",
-     main = "FF Models: Validation Accuracy",
-     xaxt = "n")
+#ACCURACY
+plot(NULL, xlim = c(1,5), ylim = c(0.3, 1.0),
+     xlab = "Epoch", ylab = "Accuracy",
+     main = "FF Models: Accuracy", xaxt = "n")
 axis(1, at = 1:5)
 for (i in 1:4) {
-  lines(1:5, models_val_acc[[i]],
-        col = colors[i], lty = ltypes[i], lwd = lwidths[i])
-  points(1:5, models_val_acc[[i]],
-         col = colors[i], pch = 19, cex = 0.8)
+  lines(1:5, histories[[i]]$metrics$accuracy,     col = colors[i], lwd = 2, lty = 1)
+  lines(1:5, histories[[i]]$metrics$val_accuracy, col = colors[i], lwd = 2, lty = 2)
 }
-legend("bottomright",
-       legend = labels,
-       col    = colors,
-       lty    = ltypes,
-       lwd    = lwidths,
-       pch    = 19,
-       bty    = "n",       # no box around legend
-       cex    = 0.85)
 
-# --- Validation Loss ---
-plot(NULL,
-     xlim = c(1, 5), ylim = c(1.0, 2.5),
-     xlab = "Epoch", ylab = "Validation Loss",
-     main = "FF Models: Validation Loss",
-     xaxt = "n")
+#LOSS
+plot(NULL, xlim = c(1,5), ylim = c(0.5, 2.5),
+     xlab = "Epoch", ylab = "Loss",
+     main = "FF Models: Loss", xaxt = "n")
 axis(1, at = 1:5)
 for (i in 1:4) {
-  lines(1:5, models_val_loss[[i]],
-        col = colors[i], lty = ltypes[i], lwd = lwidths[i])
-  points(1:5, models_val_loss[[i]],
-         col = colors[i], pch = 19, cex = 0.8)
+  lines(1:5, histories[[i]]$metrics$loss,     col = colors[i], lwd = 2, lty = 1)
+  lines(1:5, histories[[i]]$metrics$val_loss, col = colors[i], lwd = 2, lty = 2)
 }
-legend("topright",
-       legend = labels,
-       col    = colors,
-       lty    = ltypes,
-       lwd    = lwidths,
-       pch    = 19,
+
+#add legend to right margin
+par(xpd = NA)
+legend(x      = par("usr")[2] + 1,
+       y      = par("usr")[4],
+       legend = c("1 Layer", "1 Layer + Dropout",
+                  "2 Layers", "2 Layers + Dropout",
+                  "Training", "Validation"),
+       col    = c(colors, "black", "black"),
+       lty    = c(1, 1, 1, 1, 1, 2),
+       lwd    = 2,
        bty    = "n",
        cex    = 0.85)
 
-par(mfrow = c(1, 1))  # reset layout
+par(mfrow = c(1, 1), xpd = FALSE) #reset
+
 
 #5. summarize test results
 ff_results <- data.frame(
