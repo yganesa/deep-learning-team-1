@@ -221,7 +221,7 @@ train_model <- function(model) {
 
 #1.FF model parameters selected
 ff_units <- 64 #number of neurons in each hidden dense layer - captures meaningful patterns without making model very large
-dropout_rate <- 0.3 # 30% of neurons silenced randomly during training
+dropout_rate <- 0.2 # 20% of neurons silenced randomly during training
 
 #2. build model function
 build_ff_model <- function(two_layers = FALSE, use_dropout = FALSE) {
@@ -730,9 +730,195 @@ print(lstm_results)   # display final comparison of all LSTM variants
 # MODEL EVALUATION AND COMPARISON
 # ============================================================
 
-# Accuracy comparison
-# Ordinal MAE calculation
-# Final model selection
+# This section brings together results from all three architectures
+# (FF, RNN, LSTM) and evaluates them using:
+#   (1) standard test accuracy
+#   (2) a custom ordinal MSE metric that accounts for the ordered
+#       structure of the five sentiment classes
 
-# (Agata’s code goes here)
+
+# ── 1. Master Comparison Table ───────────────────────────────
+# Combine per-architecture result tables into one data frame
+
+all_results <- rbind(ff_results, rnn_results, lstm_results)
+all_results$Architecture <- c(rep("FF", 4), rep("RNN", 4), rep("LSTM", 4))
+all_results <- all_results[, c("Architecture", "Model", "Test_Loss", "Test_Accuracy")]
+
+cat("\n--- All Model Test Results ---\n")
+print(all_results[order(-all_results$Test_Accuracy), ], row.names = FALSE, digits = 4)
+
+
+# ── 2. Custom Ordinal Metric: Mean Squared Error ─────────────
+# Custom ordinal metric: convert predicted probabilities to class labels and compute
+# mean squared error between predicted and true ordinal classes.
+compute_ordinal_mse <- function(model, x, y_int) {
+  # Predict class probabilities, shape: (n_samples, 5)
+  probs <- predict(model, x, verbose = 0)
+  # Convert to 0-indexed predicted class (argmax)
+  pred_class <- apply(probs, 1, which.max) - 1L
+  # Return mean squared ordinal distance
+  mean((pred_class - y_int)^2)
+}
+
+cat("\n--- Computing Ordinal MSE for all 12 model variants ---\n")
+
+model_objects <- list(
+  ff_1layer, ff_1layer_dropout, ff_2layer, ff_2layer_dropout,
+  rnn_1layer, rnn_1layer_dropout, rnn_2layer, rnn_2layer_dropout,
+  lstm_1layer, lstm_1layer_dropout, lstm_2layer, lstm_2layer_dropout
+)
+
+all_results$Ordinal_MSE <- sapply(model_objects, compute_ordinal_mse,
+                                   x = x_test, y_int = y_test_int)
+
+# Sort by accuracy for display
+all_results_sorted <- all_results[order(-all_results$Test_Accuracy), ]
+
+cat("\n--- Full Comparison Table (sorted by Test Accuracy) ---\n")
+print(all_results_sorted[, c("Architecture","Model","Test_Loss","Test_Accuracy","Ordinal_MSE")],
+      row.names = FALSE, digits = 4)
+
+
+# ── 3. Best Model Per Architecture ───────────────────────────
+# For each architecture, select the variant with the highest test accuracy
+
+best_ff_row   <- all_results[all_results$Architecture == "FF",   ]
+best_rnn_row  <- all_results[all_results$Architecture == "RNN",  ]
+best_lstm_row <- all_results[all_results$Architecture == "LSTM", ]
+
+best_per_arch <- rbind(
+  best_ff_row[which.max(best_ff_row$Test_Accuracy),   ],
+  best_rnn_row[which.max(best_rnn_row$Test_Accuracy), ],
+  best_lstm_row[which.max(best_lstm_row$Test_Accuracy),]
+)
+
+cat("\n--- Best Model Per Architecture ---\n")
+print(best_per_arch[, c("Architecture","Model","Test_Loss","Test_Accuracy","Ordinal_MSE")],
+      row.names = FALSE, digits = 4)
+
+
+# ── 4. Visualisations ────────────────────────────────────────
+
+arch_colors <- c("FF" = "steelblue", "RNN" = "tomato", "LSTM" = "seagreen")
+
+# 4.1 Bar chart: Test Accuracy for all 12 models, colour-coded by architecture
+# Ordered by accuracy to make ranking immediately visible
+
+all_results$Model_ordered <- factor(all_results$Model,
+                                     levels = all_results$Model[order(all_results$Test_Accuracy)])
+
+ggplot(all_results, aes(x = Model_ordered, y = Test_Accuracy, fill = Architecture)) +
+  geom_bar(stat = "identity", width = 0.7) +
+  scale_fill_manual(values = arch_colors) +
+  coord_flip() +
+  labs(
+    title = "Test Accuracy: All Model Variants",
+    x     = NULL,
+    y     = "Test Accuracy"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+# 4.2 Bar chart: Ordinal MSE for all 12 models (lower = better)
+all_results$Model_ordered_mse <- factor(all_results$Model,
+                                         levels = all_results$Model[order(-all_results$Ordinal_MSE)])
+
+ggplot(all_results, aes(x = Model_ordered_mse, y = Ordinal_MSE, fill = Architecture)) +
+  geom_bar(stat = "identity", width = 0.7) +
+  scale_fill_manual(values = arch_colors) +
+  coord_flip() +
+  labs(
+    title = "Ordinal MSE: All Model Variants (lower = better)",
+    x     = NULL,
+    y     = "Ordinal MSE"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+# 4.3 Scatter: Accuracy vs. Ordinal MSE (ideal model sits top-left)
+# Best models are in the upper-left corner: high accuracy + low MSE
+ggplot(all_results, aes(x = Ordinal_MSE, y = Test_Accuracy,
+                         color = Architecture, label = Model)) +
+  geom_point(size = 3) +
+  geom_text(vjust = -0.7, size = 3, check_overlap = TRUE) +
+  scale_color_manual(values = arch_colors) +
+  labs(
+    title = "Accuracy vs. Ordinal MSE Across All Models",
+    x     = "Ordinal MSE (lower = better)",
+    y     = "Test Accuracy (higher = better)"
+  ) +
+  theme_minimal()
+
+
+# ── 5. Confusion Matrix for the Best Overall Model ───────────
+
+best_idx        <- which.max(all_results$Test_Accuracy)
+best_model_name <- as.character(all_results$Model[best_idx])
+best_arch       <- as.character(all_results$Architecture[best_idx])
+
+cat(sprintf("\nBest overall model : %s  (%s)\n",  best_model_name, best_arch))
+cat(sprintf("  Test Accuracy    : %.4f\n", all_results$Test_Accuracy[best_idx]))
+cat(sprintf("  Test Loss        : %.4f\n", all_results$Test_Loss[best_idx]))
+cat(sprintf("  Ordinal MSE      : %.4f\n", all_results$Ordinal_MSE[best_idx]))
+
+# Retrieve the Keras model object that corresponds to the winner
+best_model_obj <- switch(best_model_name,
+  "FF_1Layer"           = ff_1layer,
+  "FF_1Layer_Dropout"   = ff_1layer_dropout,
+  "FF_2Layer"           = ff_2layer,
+  "FF_2Layer_Dropout"   = ff_2layer_dropout,
+  "RNN_1Layer"          = rnn_1layer,
+  "RNN_1Layer_Dropout"  = rnn_1layer_dropout,
+  "RNN_2Layer"          = rnn_2layer,
+  "RNN_2Layer_Dropout"  = rnn_2layer_dropout,
+  "LSTM_1Layer"         = lstm_1layer,
+  "LSTM_1Layer_Dropout" = lstm_1layer_dropout,
+  "LSTM_2Layer"         = lstm_2layer,
+  "LSTM_2Layer_Dropout" = lstm_2layer_dropout
+)
+
+# Predict on test set and build confusion matrix
+probs_best <- predict(best_model_obj, x_test, verbose = 0)
+pred_best  <- apply(probs_best, 1, which.max) - 1L   # 0-indexed predicted class
+
+# Confusion matrix: rows = true class, columns = predicted class
+conf_mat <- table(
+  True      = factor(sentiment_levels[y_test_int + 1], levels = sentiment_levels),
+  Predicted = factor(sentiment_levels[pred_best  + 1], levels = sentiment_levels)
+)
+
+cat("\nConfusion Matrix (Best Overall Model):\n")
+print(conf_mat)
+
+# 5.1 Heatmap of the confusion matrix
+conf_df <- as.data.frame(conf_mat)
+conf_df$True      <- factor(conf_df$True,      levels = rev(sentiment_levels))
+conf_df$Predicted <- factor(conf_df$Predicted, levels = sentiment_levels)
+
+ggplot(conf_df, aes(x = Predicted, y = True, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 4) +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(
+    title = sprintf("Confusion Matrix — %s (%s)", best_model_name, best_arch),
+    x     = "Predicted Sentiment",
+    y     = "True Sentiment",
+    fill  = "Count"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+# Conclusions:
+cat("\nBest model per architecture:\n")
+print(best_per_arch[, c("Architecture", "Model", "Test_Accuracy", "Ordinal_MSE")],
+      row.names = FALSE, digits = 4)
+
+# Print best model
+cat(sprintf(
+  "\nOverall winner: %s (%s)\n",
+  best_model_name, best_arch
+))
+
 
