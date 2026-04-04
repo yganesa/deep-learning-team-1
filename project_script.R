@@ -386,13 +386,177 @@ print(ff_results)
 # RECURRENT NEURAL NETWORK (RNN)
 # ============================================================
 
-# Model 1: Single RNN layer
-# Model 2: Stacked RNN layers
-# Variants: with and without dropout
-
-# (Viroosh’s code goes here)
+# Model variants: single vs stacked simple RNN layers, with and without dropout.
 
 
+# 1. RNN-Specific Parameters
+rnn_units <- 32      # hidden units per RNN layer (consistent with LSTM for fair comparison)
+dropout_rate <- 0.2  # dropout rate applied to input and recurrent connections
+
+
+# 2. Build RNN Model Function
+build_rnn_model <- function(two_layers = FALSE, use_dropout = FALSE) {
+  
+  model <- keras_model_sequential() %>%
+    
+    # EMBEDDING LAYER: maps integer token IDs to dense vectors
+    # input_dim = vocabulary size, output_dim = embedding dimension
+    # output shape: (batch, maxlen, embedding_dim)
+    layer_embedding(
+      input_dim    = max_words,
+      output_dim   = embedding_dim,
+      input_length = maxlen
+    )
+  
+  if (!two_layers) {   # case: single RNN layer
+    
+    if (!use_dropout) {
+      model <- model %>%
+        # simple RNN: processes sequence step by step, returns final output only
+        # output shape: (batch, rnn_units)
+        layer_simple_rnn(units = rnn_units)
+    } else {
+      model <- model %>%
+        layer_simple_rnn(
+          units              = rnn_units,
+          dropout            = dropout_rate,             # drops input connections
+          recurrent_dropout  = dropout_rate              # drops recurrent connections
+        )
+    }
+    
+  } else {   # case: two stacked RNN layers
+    
+    if (!use_dropout) {
+      model <- model %>%
+        # first RNN must return full sequence so second layer receives sequential input
+        layer_simple_rnn(units = rnn_units, return_sequences = TRUE) %>%
+        layer_simple_rnn(units = rnn_units)              # second layer returns final output only
+    } else {
+      model <- model %>%
+        layer_simple_rnn(
+          units             = rnn_units,
+          return_sequences  = TRUE,
+          dropout           = dropout_rate,
+          recurrent_dropout = dropout_rate
+        ) %>%
+        layer_simple_rnn(
+          units             = rnn_units,
+          dropout           = dropout_rate,
+          recurrent_dropout = dropout_rate
+        )
+    }
+  }
+  
+  model <- model %>%
+    # OUTPUT LAYER: 5 units (one per sentiment class)
+    # softmax converts raw scores to probabilities summing to 1
+    layer_dense(units = num_classes, activation = "softmax")
+  
+  return(model)
+}
+
+
+# 3. Train RNN Model Variants
+
+# 3.1 Single RNN layer, no dropout - simplest RNN baseline
+rnn_1layer <- build_rnn_model(two_layers = FALSE, use_dropout = FALSE)
+compile_model(rnn_1layer)
+history_rnn_1layer <- train_model(rnn_1layer)
+
+# 3.2 Single RNN layer, with dropout
+rnn_1layer_dropout <- build_rnn_model(two_layers = FALSE, use_dropout = TRUE)
+compile_model(rnn_1layer_dropout)
+history_rnn_1layer_dropout <- train_model(rnn_1layer_dropout)
+
+# 3.3 Two stacked RNN layers, no dropout
+rnn_2layer <- build_rnn_model(two_layers = TRUE, use_dropout = FALSE)
+compile_model(rnn_2layer)
+history_rnn_2layer <- train_model(rnn_2layer)
+
+# 3.4 Two stacked RNN layers, with dropout
+rnn_2layer_dropout <- build_rnn_model(two_layers = TRUE, use_dropout = TRUE)
+compile_model(rnn_2layer_dropout)
+history_rnn_2layer_dropout <- train_model(rnn_2layer_dropout)
+
+
+# 3.5 Plot Training and Validation Accuracy + Loss
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1), oma = c(0, 0, 0, 15))
+
+colors <- c("blue", "red", "green", "purple")
+
+histories_rnn <- list(
+  history_rnn_1layer,
+  history_rnn_1layer_dropout,
+  history_rnn_2layer,
+  history_rnn_2layer_dropout
+)
+
+# ACCURACY
+plot(NULL, xlim = c(1, 5), ylim = c(0.3, 1.0),
+     xlab = "Epoch", ylab = "Accuracy",
+     main = "RNN Models: Accuracy", xaxt = "n")
+axis(1, at = 1:5)
+for (i in 1:4) {
+  lines(1:5, histories_rnn[[i]]$metrics$accuracy,     col = colors[i], lwd = 2, lty = 1)
+  lines(1:5, histories_rnn[[i]]$metrics$val_accuracy, col = colors[i], lwd = 2, lty = 2)
+}
+
+# LOSS
+plot(NULL, xlim = c(1, 5), ylim = c(0.5, 2.5),
+     xlab = "Epoch", ylab = "Loss",
+     main = "RNN Models: Loss", xaxt = "n")
+axis(1, at = 1:5)
+for (i in 1:4) {
+  lines(1:5, histories_rnn[[i]]$metrics$loss,     col = colors[i], lwd = 2, lty = 1)
+  lines(1:5, histories_rnn[[i]]$metrics$val_loss, col = colors[i], lwd = 2, lty = 2)
+}
+
+# Legend in right margin
+par(xpd = NA)
+legend(x      = par("usr")[2] + 1,
+       y      = par("usr")[4],
+       legend = c("1 Layer", "1 Layer + Dropout",
+                  "2 Layers", "2 Layers + Dropout",
+                  "Training", "Validation"),
+       col    = c(colors, "black", "black"),
+       lty    = c(1, 1, 1, 1, 1, 2),
+       lwd    = 2,
+       bty    = "n",
+       cex    = 0.85)
+
+par(mfrow = c(1, 1), xpd = FALSE)   # reset
+
+
+# 4. Evaluate RNN Models on Test Data
+eval_rnn_1layer         <- evaluate(rnn_1layer,         x_test, y_test, verbose = 0)
+eval_rnn_1layer_dropout <- evaluate(rnn_1layer_dropout, x_test, y_test, verbose = 0)
+eval_rnn_2layer         <- evaluate(rnn_2layer,         x_test, y_test, verbose = 0)
+eval_rnn_2layer_dropout <- evaluate(rnn_2layer_dropout, x_test, y_test, verbose = 0)
+
+
+# 5. Summarize Test Results
+rnn_results <- data.frame(
+  Model = c(
+    "RNN_1Layer",
+    "RNN_1Layer_Dropout",
+    "RNN_2Layer",
+    "RNN_2Layer_Dropout"
+  ),
+  Test_Loss = c(
+    as.numeric(eval_rnn_1layer["loss"]),
+    as.numeric(eval_rnn_1layer_dropout["loss"]),
+    as.numeric(eval_rnn_2layer["loss"]),
+    as.numeric(eval_rnn_2layer_dropout["loss"])
+  ),
+  Test_Accuracy = c(
+    as.numeric(eval_rnn_1layer["accuracy"]),
+    as.numeric(eval_rnn_1layer_dropout["accuracy"]),
+    as.numeric(eval_rnn_2layer["accuracy"]),
+    as.numeric(eval_rnn_2layer_dropout["accuracy"])
+  )
+)
+
+print(rnn_results)
 
 # ============================================================
 # LONG SHORT-TERM MEMORY (LSTM) — Lauren
@@ -561,7 +725,6 @@ lstm_results <- data.frame(
 )
 
 print(lstm_results)   # display final comparison of all LSTM variants
-
 
 # ============================================================
 # MODEL EVALUATION AND COMPARISON
